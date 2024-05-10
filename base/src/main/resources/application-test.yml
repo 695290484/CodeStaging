@@ -1,0 +1,21 @@
+spring:
+  # 主数据源
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/simple-platform?characterEncoding=UTF-8&serverTimezone=GMT%2B8
+    username: root
+    password: root
+
+  config:
+    import:
+    # 默认导入公共包的配置文件
+    - file:${basedir}\..\common\src\main\resources\application-test-common.yml
+  thymeleaf:
+    cache: false
+  servlet:
+    multipart:
+      max-file-size: 1024MB
+      max-request-size: 1024MB
+platform:
+  file:
+    maxSize: 2000
