@@ -161,6 +161,10 @@ public class ModuleManager extends Application {
         });
         */
 
+        FXMLLoader fxmlLoader3 = new FXMLLoader(ModuleManager.class.getResource("/codestaging/ui/entityGenerator.fxml"));
+        Parent load3 = (Parent)fxmlLoader3.load();
+        ComboBox selectTemplate3 = (ComboBox) load3.lookup("#selectModule");
+
         String[] choosedModule = {null};
         addBtn.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
             if(null == choosedModule[0]){
@@ -210,6 +214,7 @@ public class ModuleManager extends Application {
             mg.generate(choosedModule[0], moduleName, groupId, version, extraParam);
             lvLeft.getItems().remove(moduleName);
             lvRight.getItems().add(moduleName);
+            selectTemplate3.getItems().add(moduleName);
             SendMsg(Alert.AlertType.INFORMATION, "创建子模块成功,请回到IDEA中等待工程自动刷新!");
 
             addBtn.setDisable(false);
@@ -269,9 +274,6 @@ public class ModuleManager extends Application {
         */
         FlowPane pane3 = new FlowPane();
         ObservableList<Node> children3 = pane3.getChildren();
-
-        FXMLLoader fxmlLoader3 = new FXMLLoader(ModuleManager.class.getResource("/codestaging/ui/entityGenerator.fxml"));
-        Parent load3 = (Parent)fxmlLoader3.load();
         children3.add(load3);
 
         Button addBtn3 = (Button) load3.lookup("#addBtn");
@@ -306,7 +308,6 @@ public class ModuleManager extends Application {
             addBtn3.setDisable(false);
         });
 
-        ComboBox selectTemplate3 = (ComboBox) load3.lookup("#selectModule");
         TextArea templateDesc3 = (TextArea) load3.lookup("#dbConfig");
 
         List<String> modules = listAllModules();
@@ -414,6 +415,10 @@ public class ModuleManager extends Application {
 
                 refreshModuleList(mg, allModules, allLoadedModules, left, right);
                 lastRefreshList.set(System.currentTimeMillis());
+
+                List<String> m = listAllModules();
+                if(!sameList(m, modules))
+                    selectTemplate3.getItems().setAll(m);
             });
         }, 2000L, 2500L, TimeUnit.MILLISECONDS);
     }
