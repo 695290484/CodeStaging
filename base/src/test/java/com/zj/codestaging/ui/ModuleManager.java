@@ -1,5 +1,6 @@
 package com.zj.codestaging.ui;
 
+import com.zj.codestaging.utils.EntityGenerator;
 import com.zj.codestaging.utils.ModuleGenerator;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -14,12 +15,13 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import org.apache.commons.io.FileUtils;
 import org.apache.maven.model.Model;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -47,6 +49,9 @@ public class ModuleManager extends Application {
         scheduledThreadPoolExecutor.shutdown();
     }
 
+    ListView<String> lvLeft;
+    ListView<String> lvRight;
+
     @Override
     public void start(Stage primaryStage) throws Exception {
         primaryStage.setTitle("系统模板管理器(开发者工具)");
@@ -70,7 +75,7 @@ public class ModuleManager extends Application {
 
         ObservableList<String> mns = FXCollections.observableArrayList(
                 allModules);
-        ListView<String> lvLeft = new ListView<>(mns);
+        lvLeft = new ListView<>(mns);
         lvLeft.setEditable(false);
 
         VBox left = (VBox)load.lookup("#leftBox");
@@ -80,7 +85,7 @@ public class ModuleManager extends Application {
 
         ObservableList<String> nms2 = FXCollections.observableArrayList(
                 allLoadedModules);
-        ListView<String> lvRight = new ListView<>(nms2);
+        lvRight = new ListView<>(nms2);
         lvRight.setEditable(false);
         VBox right = (VBox)load.lookup("#rightBox");
         if(right != null){
@@ -90,11 +95,21 @@ public class ModuleManager extends Application {
         Button loadBtn = (Button) load.lookup("#loadBtn");
         Button unloadBtn = (Button) load.lookup("#unloadBtn");
 
+        // Button refreshBtn = (Button) load.lookup("#refreshBtn");
+        // 刷新列表
+        AtomicLong lastRefreshList = new AtomicLong(0L);
+        /*refreshBtn.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
+            lastRefreshList.set(System.currentTimeMillis());
+            refreshModuleList(mg, allModules, allLoadedModules, left, right);
+            SendMsg(Alert.AlertType.INFORMATION, "刷新列表完成!");
+        });*/
+
         // 加载
         loadBtn.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
             MultipleSelectionModel<String> selectionModel = lvLeft.getSelectionModel();
             String selectedItem = selectionModel.getSelectedItem();
             if(selectedItem != null) {
+                lastRefreshList.set(System.currentTimeMillis());
                 loadBtn.setDisable(true);
                 mg.load(selectedItem);
                 lvLeft.getItems().remove(selectedItem);
@@ -106,6 +121,7 @@ public class ModuleManager extends Application {
 
         // 卸载
         unloadBtn.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
+            lastRefreshList.set(System.currentTimeMillis());
             MultipleSelectionModel<String> selectionModel = lvRight.getSelectionModel();
             String selectedItem = selectionModel.getSelectedItem();
             if(selectedItem != null) {
@@ -117,15 +133,6 @@ public class ModuleManager extends Application {
                 unloadBtn.setDisable(false);
             }
         });
-
-        // Button refreshBtn = (Button) load.lookup("#refreshBtn");
-        // 刷新列表
-        AtomicLong lastRefreshList = new AtomicLong(0L);
-        /*refreshBtn.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
-            lastRefreshList.set(System.currentTimeMillis());
-            refreshModuleList(mg, allModules, allLoadedModules, left, right);
-            SendMsg(Alert.AlertType.INFORMATION, "刷新列表完成!");
-        });*/
 
         /*
         //////////////////////////////////////////////////
@@ -199,6 +206,7 @@ public class ModuleManager extends Application {
             }
             addBtn.setDisable(true);
             // 创建新的子模块
+            lastRefreshList.set(System.currentTimeMillis());
             mg.generate(choosedModule[0], moduleName, groupId, version, extraParam);
             lvLeft.getItems().remove(moduleName);
             lvRight.getItems().add(moduleName);
@@ -256,6 +264,122 @@ public class ModuleManager extends Application {
 
         /*
         //////////////////////////////////////////////////
+        *   实体类生成
+        /////////////////////////////////////////////////
+        */
+        FlowPane pane3 = new FlowPane();
+        ObservableList<Node> children3 = pane3.getChildren();
+
+        FXMLLoader fxmlLoader3 = new FXMLLoader(ModuleManager.class.getResource("/codestaging/ui/entityGenerator.fxml"));
+        Parent load3 = (Parent)fxmlLoader3.load();
+        children3.add(load3);
+
+        Button addBtn3 = (Button) load3.lookup("#addBtn");
+
+        Map<String, String> dbInfo = new HashMap<>();
+        String[] choosedModule3 = {null};
+        addBtn3.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
+            if(null == choosedModule3[0]){
+                SendMsg(Alert.AlertType.ERROR, "请先选择子模块!");
+                return;
+            }
+
+            if(dbInfo.size()<1){
+                SendMsg(Alert.AlertType.ERROR, "未找到数据源配置信息!");
+                return;
+            }
+
+            String driver = dbInfo.get("driver");
+            String url = dbInfo.get("url");
+            String username = dbInfo.get("username");
+            String password = dbInfo.get("password");
+            String db = dbInfo.get("db");
+
+            addBtn3.setDisable(true);
+            try {
+                EntityGenerator.generateEntity(driver, url, username, password, db, choosedModule3[0]);
+            } catch (Exception e) {
+                SendMsg(Alert.AlertType.ERROR, "生成实体类时出错!\n" + e.getMessage());
+                return;
+            }
+            SendMsg(Alert.AlertType.INFORMATION, "创建实体类成功,请回到IDEA中等待工程自动刷新!");
+            addBtn3.setDisable(false);
+        });
+
+        ComboBox selectTemplate3 = (ComboBox) load3.lookup("#selectModule");
+        TextArea templateDesc3 = (TextArea) load3.lookup("#dbConfig");
+
+        List<String> modules = listAllModules();
+        selectTemplate3.getItems().addAll(modules);
+        selectTemplate3.setOnAction(event -> {
+            choosedModule3[0] = selectTemplate3.getValue().toString();
+
+            // 子模块目录
+            String rootPath = System.getProperty("user.dir");
+            String modulePath = rootPath + File.separator + "project-" + choosedModule3[0];
+
+            // 读取本地配置文件
+            String configFile = modulePath + File.separator + "src/main/resources/application-local-" + choosedModule3[0] + ".yml";
+            File file = new File(configFile);
+            if(file.exists()) {
+                DumperOptions dumperOptions = new DumperOptions();
+                dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+                Yaml yaml = new Yaml(dumperOptions);
+                LinkedHashMap<String,Object> loadData = null;
+
+                try {
+                    String data = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
+                    loadData = yaml.loadAs(data, LinkedHashMap.class);
+                    Map<String, Object> map = (Map<String, Object>)((Map<String, Object>) loadData.get("spring")).get("datasource");
+                    Iterator<Map.Entry<String, Object>> it = map.entrySet().iterator();
+                    String driver, url, username , password, db;
+                    while(it.hasNext()){
+                        Map.Entry<String, Object> entry = it.next();
+                        Map<String, Object> value = (Map<String, Object>) entry.getValue();
+                        driver = (String) value.get("driver-class-name");
+                        url = (String) value.get("url");
+                        username = (String) value.get("username");
+                        password = (String) value.get("password");
+
+                        int startIndex = url.lastIndexOf("/") + 1;
+                        int endIndex = url.indexOf("?");
+                        if (startIndex != 0 && endIndex != -1){
+                            db = url.substring(startIndex, endIndex);
+                            templateDesc3.setText(
+                                    "driver: " + driver + "\n"
+                                    + "url: " + url + "\n"
+                                    + "username: " + username + "\n"
+                                    + "password: " + password + "\n"
+                                    + "db: " + db
+                            );
+                            dbInfo.put("driver", driver);
+                            dbInfo.put("url", url);
+                            dbInfo.put("username", username);
+                            dbInfo.put("password", password);
+                            dbInfo.put("db", db);
+
+                        }else{
+                            SendMsg(Alert.AlertType.ERROR, "未找到数据源的url中的数据库名称");
+                        }
+
+
+                        // 取完第一个数据源配置就结束
+                        break;
+                    }
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+            }else{
+                SendMsg(Alert.AlertType.ERROR, "未找到配置文件:" + configFile);
+            }
+
+        });
+
+        /*
+        //////////////////////////////////////////////////
         *   选项卡
         /////////////////////////////////////////////////
         */
@@ -266,8 +390,11 @@ public class ModuleManager extends Application {
         Tab tab2 = new Tab("系统生成");
         tab2.setContent(pane2);
         tab2.setClosable(false);
+        Tab tab3 = new Tab("实体类生成");
+        tab3.setContent(pane3);
+        tab3.setClosable(false);
 
-        tabPane.getTabs().addAll(tab1, tab2);
+        tabPane.getTabs().addAll(tab1, tab2, tab3);
 
         Scene scene = new Scene(tabPane, 560, 350);
         primaryStage.setScene(scene);
@@ -305,6 +432,19 @@ public class ModuleManager extends Application {
                 String moduleName = files[i].getName().replace("project-", "");
                 if(!allLoadedModules.contains(moduleName))
                     rootModules.add(moduleName);
+            }
+        }
+        return rootModules;
+    }
+
+    public List<String> listAllModules(){
+        List<String> rootModules = new ArrayList<>();
+        String rootPath = System.getProperty("user.dir");
+        File[] files = new File(rootPath).listFiles();
+        for (int i = 0; i < files.length; i++) {
+            if(files[i].isDirectory() && files[i].getName().contains("project-")){
+                String moduleName = files[i].getName().replace("project-", "");
+                rootModules.add(moduleName);
             }
         }
         return rootModules;
@@ -409,24 +549,49 @@ public class ModuleManager extends Application {
      * @param right
      */
     void refreshModuleList(ModuleGenerator mg, List<String> allModules, List<String> allLoadedModules, VBox left, VBox right){
-        allLoadedModules.clear();
-        allLoadedModules.addAll(listLoadedChildren(mg));
-        unloadProjectNotExists(mg, allLoadedModules);
-        allModules.clear();
-        allModules.addAll(listAllUnloadChildren(allLoadedModules));
+        List<String> listLoadedChildren = listLoadedChildren(mg);
+        if(!sameList(allLoadedModules, listLoadedChildren)) {
+            allLoadedModules.clear();
+            allLoadedModules.addAll(listLoadedChildren);
+            unloadProjectNotExists(mg, allLoadedModules);
 
-        ListView<String> updatedLvLeft = new ListView<>(FXCollections.observableArrayList(
-                allModules));
-        left.getChildren().set(1, updatedLvLeft);
+            ListView<String> updatedLvRight = new ListView<>(FXCollections.observableArrayList(
+                    allLoadedModules));
+            right.getChildren().set(1, updatedLvRight);
+            lvRight = updatedLvRight;
+        }
 
-        ListView<String> updatedLvRight = new ListView<>(FXCollections.observableArrayList(
-                allLoadedModules));
-        right.getChildren().set(1, updatedLvRight);
+        List<String> listAllUnloadChildren = listAllUnloadChildren(allLoadedModules);
+        if(!sameList(allModules, listAllUnloadChildren)) {
+            allModules.clear();
+            allModules.addAll(listAllUnloadChildren);
+
+            ListView<String> updatedLvLeft = new ListView<>(FXCollections.observableArrayList(
+                    allModules));
+            left.getChildren().set(1, updatedLvLeft);
+            lvLeft = updatedLvLeft;
+        }
     }
 
     void SendMsg(Alert.AlertType alertType, String msg) {
         Alert alert = new Alert(alertType);
         alert.setContentText(msg);
         alert.show();
+    }
+
+    boolean sameList(List<String> list1, List<String> list2){
+        boolean same = true;
+        if (list1.size() != list2.size()) {
+            same = false;
+        } else {
+            for (int i = 0; i < list1.size(); i++) {
+                if (!list1.get(i).equals(list2.get(i))) {
+                    same = false;
+                    break;
+                }
+            }
+        }
+
+        return same;
     }
 }
